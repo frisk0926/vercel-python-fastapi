@@ -1,43 +1,58 @@
 #!/usr/bin/env python
-import typing
-from fastapi import File, UploadFile, Header, APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from openai import AsyncClient
+from pydantic import BaseModel, Field
+import httpx
 from fastapi.responses import JSONResponse
-from fastapi import Form
+from fastapi import APIRouter, File, Depends, Header, UploadFile, HTTPException
+import typing
 
 router = APIRouter()
 
 class WhisperArgs(BaseModel):
-    model: str
-    prompt: typing.Optional[str] = None
-    response_format: typing.Optional[str] = "json"
-    language: typing.Optional[str] = "en"
-    temperature: typing.Optional[float] = 0.0
+    model: str = Field(default="whisper-large-v3")
+    temperature: float = Field(default=0, ge=0, le=1)
+    response_format: str = Field(default="json")
+    language: typing.Optional[str] = None
 
-@router.post("/transcribe")
+    class Config:
+        schema_extra = {
+            "example": {
+                "model": "whisper-large-v3",
+                "temperature": 0,
+                "response_format": "json",
+                "language": "en"
+            }
+        }
+
+GROQ_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+
+@router.post("/transcribe/")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    model: str = Form(...),
-    prompt: typing.Optional[str] = Form(None),
-    response_format: typing.Optional[str] = Form("json"),
-    language: typing.Optional[str] = Form("en"),
-    temperature: typing.Optional[float] = Form(0.0),
+    args: WhisperArgs = Depends(),
     authorization: str = Header(...)
 ):
-    api_key = authorization.split(" ")[1]
-    client = AsyncClient(base_url="https://api.groq.com/openai/v1", api_key=api_key)
-    contents = await file.read()
-    
-    try:
-        transcription = await client.audio.transcriptions.create(
-            file=(file.filename, contents),
-            model=model,
-            prompt=prompt,
-            response_format=response_format,
-            language=language,
-            temperature=temperature
-        )
-        return JSONResponse(content={"transcription": transcription.text})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    API_KEY = authorization.split(" ")[1]
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY is not set")
+
+    form_data = args.dict(exclude_none=True)
+    form_data["temperature"] = str(form_data["temperature"])
+    files = {
+        "file": (file.filename, file.file, file.content_type)
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                GROQ_API_URL,
+                headers={'Authorization': authorization},
+                data=form_data,
+                files=files
+            )
+            response.raise_for_status()
+            return JSONResponse(content=response.json())
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
