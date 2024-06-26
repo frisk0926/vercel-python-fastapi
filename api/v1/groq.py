@@ -17,7 +17,7 @@ class GroqArgs(BaseModel):
 
 
 @router.post("/text")
-async def test_groq(args: GroqArgs):
+async def test_groq(args: GroqArgs,authorization: str = Header(...)):
     client = AsyncClient(
         base_url="https://api.groq.com/openai/v1",
         api_key=args.api_key
