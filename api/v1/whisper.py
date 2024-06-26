@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 import typing
-from fastapi import File, UploadFile, Header, APIRouter, Depends
+from fastapi import File, UploadFile, Header, APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from openai import AsyncClient
 from fastapi.responses import JSONResponse
-from fastapi import HTTPException
+from fastapi import Form
 
 router = APIRouter()
 
@@ -18,7 +18,11 @@ class WhisperArgs(BaseModel):
 @router.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    args: WhisperArgs = Depends(WhisperArgs),
+    model: str = Form(...),
+    prompt: typing.Optional[str] = Form(None),
+    response_format: typing.Optional[str] = Form("json"),
+    language: typing.Optional[str] = Form("en"),
+    temperature: typing.Optional[float] = Form(0.0),
     authorization: str = Header(...)
 ):
     api_key = authorization.split(" ")[1]
@@ -28,11 +32,11 @@ async def transcribe_audio(
     try:
         transcription = await client.audio.transcriptions.create(
             file=(file.filename, contents),
-            model=args.model,
-            prompt=args.prompt,
-            response_format=args.response_format,
-            language=args.language,
-            temperature=args.temperature
+            model=model,
+            prompt=prompt,
+            response_format=response_format,
+            language=language,
+            temperature=temperature
         )
         return JSONResponse(content={"transcription": transcription.text})
     except Exception as e:
