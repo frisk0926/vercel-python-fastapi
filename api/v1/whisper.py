@@ -3,6 +3,8 @@ import typing
 from fastapi import File, UploadFile, Header, APIRouter, Depends
 from pydantic import BaseModel
 from openai import AsyncClient
+from fastapi.responses import JSONResponse
+from fastapi import HTTPException
 
 router = APIRouter()
 
@@ -16,7 +18,7 @@ class WhisperArgs(BaseModel):
 @router.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    args: WhisperArgs = Depends(),
+    args: WhisperArgs = Depends(WhisperArgs),
     authorization: str = Header(...)
 ):
     api_key = authorization.split(" ")[1]
@@ -32,6 +34,6 @@ async def transcribe_audio(
             language=args.language,
             temperature=args.temperature
         )
-        return {"transcription": transcription.text}
+        return JSONResponse(content={"transcription": transcription.text})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
